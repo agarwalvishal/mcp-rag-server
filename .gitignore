@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv*/
+
+# IDE
+.vscode/
+.idea/
+
+# Project data (generated at runtime)
+qdrant_storage
+qdrant_data/
+
+# Secrets
+.env
+
+# OS
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+
+# Claude Code workspace (local to each developer)
+.claude/

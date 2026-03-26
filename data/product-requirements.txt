@@ -1,0 +1,170 @@
+ACME CORP — PRODUCT REQUIREMENTS DOCUMENT
+==========================================
+
+Project: User Dashboard Redesign (Q2 2026)
+Document Owner: Lisa Park, Product Manager
+Last Updated: 2026-02-15
+Status: Approved
+Ticket: ENG-2847
+
+EXECUTIVE SUMMARY
+------------------
+
+The current user dashboard was built in 2024 as an MVP and hasn't had a major update since. Customer feedback consistently highlights three pain points: slow load times (avg 4.2 seconds), inability to customize widget layout, and missing data export functionality. This redesign addresses all three while laying the groundwork for the self-service analytics feature planned for Q3.
+
+The redesign targets a 60% reduction in dashboard load time, customizable widget layouts, and CSV/PDF export for all data views. We expect this to reduce dashboard-related support tickets by 40% and increase daily active usage by 25%.
+
+
+GOALS AND SUCCESS METRICS
+--------------------------
+
+Primary goals:
+1. Reduce dashboard initial load time from 4.2s to under 1.5s (p95)
+2. Allow users to customize their dashboard layout (add, remove, rearrange widgets)
+3. Enable data export (CSV, PDF) from any dashboard widget
+4. Maintain accessibility standards (WCAG 2.1 AA compliance)
+
+Success metrics (measured 30 days post-launch):
+- Dashboard load time p95 < 1.5 seconds (currently 4.2s)
+- Dashboard daily active users increase by 25% (currently 3,400 DAU)
+- Support tickets tagged "dashboard" decrease by 40% (currently ~120/month)
+- Widget customization adoption > 30% of active users
+- Export feature used by > 20% of active users
+- No increase in error rate (currently 0.3%)
+
+
+USER STORIES
+-------------
+
+US-1: As a team admin, I want to see my team's key metrics at a glance so that I can quickly assess our performance without navigating to multiple pages.
+
+US-2: As a user, I want to drag and drop widgets to customize my dashboard layout so that the most important information is front and center for my workflow.
+
+US-3: As a finance team member, I want to export any dashboard widget's data as CSV so that I can import it into our accounting software for monthly reporting.
+
+US-4: As a compliance officer, I want to export dashboard views as PDF with timestamps so that I can attach them to audit reports.
+
+US-5: As a mobile user, I want the dashboard to be fully responsive so that I can check metrics from my phone during meetings.
+
+US-6: As a new user, I want a sensible default dashboard layout so that I see useful information immediately without having to configure anything.
+
+US-7: As a power user, I want to save multiple dashboard layouts (e.g., "Daily Standup", "Monthly Review") and switch between them quickly.
+
+US-8: As a team admin, I want to create a shared dashboard layout that all team members see by default, while still allowing individual customization.
+
+
+WIDGET CATALOG
+---------------
+
+The redesigned dashboard supports the following widgets. Each widget can be resized (small, medium, large) and repositioned via drag-and-drop.
+
+Core widgets (available to all users):
+- Activity feed: recent actions across the organization
+- User count: total active users with trend sparkline
+- Quick actions: shortcuts to common tasks (create user, run report, view logs)
+- System status: health indicators for Acme services
+
+Analytics widgets (requires "read:analytics" scope):
+- Usage chart: daily/weekly/monthly active users over time
+- Top actions: most frequent user actions (bar chart)
+- Geographic distribution: user locations (map view)
+- Retention cohort: weekly retention matrix
+
+Admin widgets (requires "admin" role):
+- Billing summary: current plan, usage, next invoice
+- Pending invitations: outstanding user invites with resend option
+- API usage: request volume and error rates by endpoint
+- Audit log: recent security-relevant events
+
+
+TECHNICAL CONSTRAINTS
+----------------------
+
+Frontend:
+- Must use the existing Next.js 14 + React 18 stack (no framework changes this quarter)
+- Widget state persisted in the user-service API (new endpoint: PATCH /users/{id}/preferences)
+- Dashboard data fetched via existing API endpoints — no new backend services
+- Use React Server Components for initial render (critical for load time target)
+- Widget drag-and-drop via @dnd-kit/sortable (already in our dependency tree)
+
+Performance:
+- Initial load: server-side render the default widgets, lazy-load others
+- Data refresh: widgets poll every 60 seconds (configurable per widget)
+- Skeleton loading states for all widgets (no layout shift)
+- Target bundle size increase: < 50KB gzipped over current dashboard
+
+Backend:
+- User preferences stored as JSONB in the users table (max 10KB per user)
+- Shared dashboard layouts stored in a new "dashboard_templates" table
+- Export service: new endpoint that renders widget data as CSV or PDF
+- PDF generation via Puppeteer (server-side) — adds ~100MB to the container image
+
+Mobile:
+- Responsive breakpoints: 1440px (desktop), 1024px (tablet), 640px (mobile)
+- Mobile layout: single-column, widgets stack vertically
+- No drag-and-drop on mobile — use an "edit layout" mode with up/down arrows instead
+
+
+TIMELINE
+---------
+
+Sprint 29 (Mar 4 - Mar 17):
+- Widget component library (core widgets)
+- Drag-and-drop layout engine
+- User preferences API endpoint
+
+Sprint 30 (Mar 18 - Mar 31):
+- Analytics widgets
+- Responsive mobile layout
+- Skeleton loading states
+
+Sprint 31 (Apr 1 - Apr 14):
+- CSV/PDF export functionality
+- Shared dashboard templates (admin)
+- Performance optimization pass
+
+Sprint 32 (Apr 15 - Apr 28):
+- QA and accessibility audit
+- Beta rollout (10% of users)
+- Documentation and help center updates
+
+Sprint 33 (Apr 29 - May 12):
+- Full rollout
+- Monitor metrics
+- Address feedback from beta
+
+
+OUT OF SCOPE
+-------------
+
+The following are explicitly NOT included in this project:
+- Real-time streaming updates (WebSocket) — deferred to Q3
+- Custom widget builder (user-created widgets) — deferred to Q3
+- Dashboard embedding (iframes for external use) — no current demand
+- Data warehouse integration (direct BigQuery/Snowflake queries) — separate project
+- Notification preferences in dashboard — owned by notification-service team
+
+
+RISKS AND MITIGATIONS
+----------------------
+
+Risk: Load time target (1.5s) may be unachievable with the current API response times.
+Mitigation: Profile API endpoints during Sprint 29. If API is the bottleneck, add a BFF (backend-for-frontend) aggregation layer.
+
+Risk: Widget drag-and-drop may have accessibility issues with screen readers.
+Mitigation: Early accessibility review in Sprint 30. Fall back to a list-based reorder UI if drag-and-drop isn't accessible.
+
+Risk: PDF export adds significant container size and may slow deployments.
+Mitigation: Run Puppeteer as a separate sidecar container. If too complex, use a lighter PDF library (pdfkit) with reduced formatting fidelity.
+
+Risk: Shared dashboard templates may create confusion about who controls the layout.
+Mitigation: Clear UI distinction between "team default" and "my customization". Users can always reset to team default.
+
+
+APPROVAL
+---------
+
+Approved by:
+- Lisa Park, Product Manager — 2026-02-15
+- Marcus Rivera, Engineering Lead — 2026-02-15
+- Diane Torres, VP Engineering — 2026-02-16

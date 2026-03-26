@@ -1,0 +1,6 @@
+This is a plain text document for testing.
+
+It contains multiple paragraphs to verify that the text loader
+and chunking logic work with .txt files.
+
+The content here is simple but sufficient for unit tests.

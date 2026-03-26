@@ -1,0 +1,33 @@
+# MCP RAG Server Configuration
+# All settings can also be overridden via MCPRAG_* environment variables
+# (e.g., MCPRAG_QDRANT_URL, MCPRAG_DATA_DIR)
+
+# Directory containing documents to index
+data_dir: "./data"
+
+# File types to load (requires matching loader — pdf needs pymupdf installed)
+file_types:
+  - md
+  - txt
+  - pdf
+
+# Qdrant vector database
+# Mode: "local" (file-based, no Docker), "memory" (in-memory, no Docker), "server" (remote Qdrant)
+qdrant_mode: "local"
+qdrant_local_path: "./qdrant_data"    # Storage path for local mode
+qdrant_url: "http://localhost:6333"   # Qdrant server URL (only used in server mode)
+collection_name: "knowledge_base"
+
+# Embedding model (Nomic v1.5 — good balance of quality and speed)
+embedding_model: "nomic-ai/nomic-embed-text-v1.5"
+
+# Chunking parameters
+chunk_size: 500       # Target chunk size in characters
+chunk_overlap: 50     # Overlap between consecutive chunks
+
+# Search parameters
+search_top_k: 3             # Number of results to return
+search_score_threshold: 0.66 # Minimum relevance score (0-1)
+
+# Logging
+log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR

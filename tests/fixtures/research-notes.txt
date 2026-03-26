@@ -1,0 +1,187 @@
+CACHING STRATEGY RESEARCH NOTES
+================================
+
+Author: Alex Nowak, Platform Team
+Date: 2026-02-10
+Context: Evaluating caching options for Acme's API gateway and user-service. Current cache hit ratio is 34% (Redis, basic key-value). Target: 80%+ hit ratio with sub-5ms cache reads.
+
+
+CURRENT STATE
+--------------
+
+We're running Redis 7.2 on ElastiCache (r7g.large, single node) as a basic key-value cache for user-service. Issues:
+
+- Cache hit ratio: 34% (most keys expire before reuse due to short TTLs)
+- No cache invalidation strategy — we set TTL=300s and hope for the best
+- Cache keys are not namespaced — risk of collision between services
+- No metrics on cache performance beyond CloudWatch basics
+- Estimated 60% of user-service database queries are cacheable but uncached
+
+Monthly cost: $180/month for the single ElastiCache node.
+Database load: PostgreSQL RDS is at 45% CPU during peak hours. Caching should reduce this.
+
+
+REDIS VS MEMCACHED COMPARISON
+-------------------------------
+
+Both are available on ElastiCache. Key differences for our use case:
+
+Redis advantages:
+- Data structures (hashes, sorted sets, lists) — useful for caching user objects with partial updates
+- Persistence (RDB snapshots, AOF) — cache survives restarts, faster warm-up
+- Pub/Sub — potential use for cache invalidation signals across services
+- Lua scripting — complex atomic operations (e.g., "get if exists, else compute and set")
+- Cluster mode with automatic sharding — horizontal scaling path
+- TTL per key with active expiration
+
+Memcached advantages:
+- Simpler, slightly lower latency for pure get/set (0.3ms vs 0.5ms in our benchmarks)
+- Multi-threaded — better per-node throughput for simple operations
+- Lower memory overhead per key
+- No persistence = no disk I/O (slightly more predictable latency)
+
+Decision: Stay with Redis. The data structure support is critical for our caching patterns (see below). The 0.2ms latency difference is negligible. Persistence is a bonus for cache warm-up after deploys.
+
+
+CACHING PATTERNS FOR ACME
+---------------------------
+
+Pattern 1: Read-Through Cache (user profiles)
+
+Currently: API → PostgreSQL on every request.
+Proposed: API → Redis → PostgreSQL (on cache miss).
+
+Implementation:
+- Cache key: `user:{org_id}:{user_id}` (namespaced to avoid cross-service collision)
+- Cache value: JSON-serialized user object (hash type for partial field access)
+- TTL: 3600 seconds (1 hour) — user profiles change infrequently
+- Invalidation: Write-through (update cache on every write to DB)
+- Expected hit ratio: 85%+ (user profiles are read 50x more than they're written)
+
+Pattern 2: Cache-Aside with Stampede Prevention (search results)
+
+The "list users" endpoint with filters is expensive (full-text search + joins). Multiple identical requests during peak load cause a "thundering herd" — all miss cache simultaneously and hit the database.
+
+Implementation:
+- Cache key: `search:{org_id}:sha256({query_params})` (hash the query for key stability)
+- TTL: 300 seconds (5 minutes) — search results can be slightly stale
+- Stampede prevention: Use Redis SETNX to acquire a "lock" key. First request computes and caches; concurrent requests wait 50ms and retry from cache.
+- Expected hit ratio: 60% (search queries are more diverse than profile reads)
+
+Pattern 3: Write-Behind Cache (activity logs)
+
+Activity log writes are high-volume (500+/minute) but reads are infrequent (compliance audits). Currently, every activity event is a direct database INSERT.
+
+Implementation:
+- Buffer activity events in a Redis list: LPUSH `activity:{org_id}`
+- Background worker drains the list every 10 seconds, batch-inserts to PostgreSQL
+- Reduces database write load by ~90% (500 individual INSERTs → 1 batch INSERT)
+- Risk: data loss if Redis crashes before drain. Mitigation: AOF persistence with fsync every second (max 1 second of data loss, acceptable for activity logs per Acme's data classification)
+
+
+CDN LAYER CONSIDERATIONS
+--------------------------
+
+For static assets (JS bundles, images, fonts), we should add CloudFront in front of the web app.
+
+Current state: All assets served directly from the Next.js server through the ALB. No CDN.
+
+Proposed CDN configuration:
+- CloudFront distribution with S3 origin for static assets
+- Cache-Control headers: `public, max-age=31536000, immutable` for hashed assets
+- `public, max-age=0, must-revalidate` for HTML pages
+- Origin shield enabled (us-east-1) to reduce origin load
+- Price class: 100 (US, Canada, Europe — where 95% of our users are)
+- Estimated cost: ~$50/month at current traffic levels
+
+Expected impact:
+- Static asset load time: ~200ms → ~20ms (from CDN edge)
+- Origin server load: -40% (static asset requests eliminated)
+- Global performance: significant improvement for European users (currently 800ms+ for assets)
+
+Note: API responses should NOT be CDN-cached (dynamic, user-specific data). Only static assets.
+
+
+CACHE INVALIDATION STRATEGY
+-----------------------------
+
+"There are only two hard things in Computer Science: cache invalidation and naming things." — Phil Karlton
+
+For Acme, we need a practical invalidation strategy that balances consistency and complexity:
+
+Level 1: Write-Through (strong consistency)
+- When a user profile is updated, update the cache immediately in the same transaction
+- Implementation: After successful DB write, SET the updated value in Redis
+- Fallback: If Redis SET fails, delete the key (next read will re-populate)
+- Used for: User profiles, organization settings, role assignments
+
+Level 2: Event-Driven Invalidation (eventual consistency)
+- Services publish events to RabbitMQ when data changes
+- A cache-invalidation worker subscribes and deletes affected keys
+- Propagation delay: ~100ms (acceptable for search results, activity feeds)
+- Used for: Search result caches, aggregation caches, dashboard widget data
+
+Level 3: TTL-Based Expiration (lazy consistency)
+- No explicit invalidation — keys expire naturally
+- Used for: Rate limit counters, session metadata, temporary tokens
+- TTLs chosen based on data volatility (5 min for volatile, 1 hour for stable)
+
+Anti-patterns to avoid:
+- Cache-everything-forever: leads to stale data and memory bloat
+- Invalidate-on-every-write: defeats the purpose of caching for write-heavy data
+- Global cache flush: nuclear option that causes a thundering herd to the database
+
+
+CAPACITY PLANNING
+------------------
+
+Current data sizes (estimated):
+- User profiles: 142 users × 2KB avg = ~284KB
+- Search result cache: ~500 unique queries × 5KB avg = ~2.5MB
+- Activity buffer: ~500 events/min × 0.5KB × 10s drain = ~42KB peak
+- Session metadata: ~200 active sessions × 1KB = ~200KB
+- Total working set: ~5MB
+
+This is tiny. Our current r7g.large (13.07 GB RAM) is wildly oversized. However:
+- Acme plans to scale to 10,000 users by EOY 2026
+- At 10K users: ~20MB profiles + ~50MB search cache + ~10MB activity buffer = ~80MB
+- Still well within a single r7g.large node
+
+Recommendation: Downsize to r7g.medium (6.38 GB, $90/month — saves $90/month) now. Revisit when we approach 50,000 users or add more cache use cases.
+
+
+IMPLEMENTATION PLAN
+--------------------
+
+Phase 1 (Sprint 29): Read-through cache for user profiles
+- Add cache layer to user-service GET endpoints
+- Implement write-through invalidation
+- Deploy and monitor hit ratio (target: 80%+)
+
+Phase 2 (Sprint 30): Search result caching with stampede prevention
+- Add cache-aside pattern to list/search endpoints
+- Implement SETNX-based stampede prevention
+- Deploy and monitor DB query reduction
+
+Phase 3 (Sprint 31): Write-behind for activity logs + CDN setup
+- Implement Redis list buffer for activity events
+- Set up CloudFront distribution for web-app static assets
+- Downsize ElastiCache instance to r7g.medium
+
+Expected outcomes after all phases:
+- Cache hit ratio: 80%+ (from 34%)
+- Database CPU during peak: <25% (from 45%)
+- API p95 latency: <50ms for cached endpoints (from ~200ms)
+- Monthly infrastructure savings: ~$90 (cache downsize) + reduced DB load
+
+
+OPEN QUESTIONS
+---------------
+
+1. Should we use Redis Cluster mode now or wait until we need it? Cluster adds operational complexity but provides automatic sharding. Current data set doesn't justify it.
+
+2. Should the cache-invalidation worker be a separate service or part of each service? Separate service is cleaner but adds a deployment. Leaning toward per-service invalidation for simplicity.
+
+3. Do we need a local in-process cache (e.g., Python lru_cache) in front of Redis? This would add another cache layer but reduce Redis roundtrips for extremely hot keys. Probably premature optimization at our scale.
+
+Decision needed from Sarah Chen (Platform Lead) on questions 1-3 by Sprint 29 planning.
