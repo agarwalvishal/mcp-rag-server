@@ -297,13 +297,13 @@ LLM calls knowledge_base_search
 
 ```bash
 # Run unit tests (no Qdrant or Docker needed — uses in-memory mode)
-python -m pytest test_loaders.py -v
+python -m pytest tests/test_loaders.py -v
 
 # Run search tests (self-contained — uses in-memory Qdrant and test fixtures)
-python -m pytest test_search.py -v
+python -m pytest tests/test_search.py -v
 
 # Run all tests
-python -m pytest test_loaders.py test_search.py -v
+python -m pytest tests/ -v
 
 # Debug with MCP Inspector
 pnpx @modelcontextprotocol/inspector python3 mcp_server.py

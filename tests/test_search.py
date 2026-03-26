@@ -4,7 +4,7 @@ Tests for knowledge base search relevance, score boundaries, and tool routing.
 Self-contained — uses in-memory Qdrant and tests/fixtures/ documents.
 No Docker, no pre-ingestion, no external dependencies.
 
-Run with:  ./venv/bin/python -m pytest test_search.py -v
+Run with:  ./venv/bin/python -m pytest tests/test_search.py -v
 """
 
 import os
@@ -16,7 +16,7 @@ import pytest
 from knowledge_base import Config, KnowledgeBase, chunk_document, load_documents
 
 
-FIXTURES = Path(__file__).parent / "tests" / "fixtures"
+FIXTURES = Path(__file__).parent / "fixtures"
 NO_ANSWER = "I couldn't find a relevant answer in my knowledge base."
 
 

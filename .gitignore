@@ -28,3 +28,4 @@ qdrant_data/
 
 # Claude Code workspace (local to each developer)
 .claude/
+CLAUDE.md

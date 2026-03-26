@@ -3,7 +3,7 @@ Tests for document loaders, configuration, chunk metadata, and runtime ingestion
 
 Unit tests — no Qdrant or embedding model required (except TestRuntimeIngestion).
 
-Run with:  ./venv/bin/python -m pytest test_loaders.py -v
+Run with:  ./venv/bin/python -m pytest tests/test_loaders.py -v
 """
 
 import os
@@ -22,7 +22,7 @@ from knowledge_base import (
     load_documents,
 )
 
-FIXTURES = Path(__file__).parent / "tests" / "fixtures"
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 # ── Config Tests ──────────────────────────────────────────────────────────────
