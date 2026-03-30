@@ -17,65 +17,42 @@ This MCP server exposes three tools to any connected AI client:
 
 **No separate ingest command.** Documents in `data/` are automatically loaded, chunked, embedded, and indexed on startup.
 
-## Use Cases
+## Setup
 
-**Team Project Documentation** — ADRs, API specs, runbooks, onboarding guides. Connect to Claude Desktop or Cursor and ask "What was the decision on auth middleware?" or "What are the API rate limits?" instead of searching through files. The included sample docs demonstrate this with a fictional startup's technical documentation.
+### Step 1: Install
 
-**Research & Study** — Drop research papers (PDFs) and notes into `data/`. Ask questions across all of them: "What caching strategy should we use?" or "What was the Q1 uptime?" Results include page numbers for easy reference back to the source.
-
-**Small Company Knowledge Base** — Internal docs (process guides, product specs, compliance docs) searchable by every team member's AI assistant. Too small for enterprise RAG, too doc-heavy for "just search Slack."
-
-**Local LLM Enhancement** — Running Ollama or another local model? Your LLM has zero built-in capabilities — no document access, no web search, no tools. This server gives it all three via MCP.
-
-**Who this isn't for:** Enterprise-scale (10,000+ docs), non-developers (no UI), or highly specialized domains needing custom chunking/embedding (legal, medical).
-
-## Quickstart
+Requires Python 3.10+.
 
 ```bash
+git clone https://github.com/vishalpai/mcp-rag-server.git
+cd mcp-rag-server
+python3 -m venv venv
+source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python mcp_server.py
 ```
 
-That's it. No Docker, no API keys for embeddings, no config needed.
+### Step 2: Add your documents
 
-- Loads documents from `data/`, embeds with Nomic v1.5, stores in local Qdrant (file-based, persists across restarts)
-- First run downloads the embedding model (~550MB), cached for subsequent runs
-- Web search requires a `FIRECRAWL_API_KEY` in `.env` — KB search works without it
+Drop `.md`, `.txt`, or `.pdf` files into the `data/` folder. The server loads everything in this folder on startup.
 
-To try it out without persistence:
+The repo ships with sample documents from a fictional startup — you can use these to test, then replace with your own.
 
-```bash
-python mcp_server.py --in-memory
-```
+### Step 3: Connect to your AI client
 
-## Try It Out
+Pick your client below. Each config points the client at the MCP server so it can call the tools.
 
-The included `data/` folder contains sample documents from a fictional startup (Acme Corp). After starting the server, try these queries to see the system in action:
+> **First run note:** The embedding model (~550MB) downloads automatically and is cached for future runs.
 
-| Query | Expected Source | What It Tests |
-|-------|----------------|---------------|
-| "What authentication method did the team choose?" | adr-auth-middleware.md | Semantic match on ADR document |
-| "What are the API rate limits?" | api-reference.md | Precise technical detail retrieval |
-| "How do I set up my dev environment?" | onboarding-guide.md | Natural language to structured guide |
-| "What caused the February API outage?" | infrastructure-report.pdf | PDF search with page citation |
-| "What are the Q2 infrastructure priorities?" | infrastructure-report.pdf, Page 5 | PDF section + page tracking |
-| "Redis vs Memcached comparison" | research-notes.txt | Cross-document semantic search |
-| "How to cook pasta" | No results | Irrelevant query correctly filtered |
+#### Claude Desktop
 
-Replace these with your own documents in `data/` — the server picks them up on next restart.
-
-## Connect to Your AI Client
-
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "rag-knowledge-base": {
-      "command": "/absolute/path/to/project/venv/bin/python",
-      "args": ["/absolute/path/to/project/mcp_server.py"],
+      "command": "/absolute/path/to/mcp-rag-server/venv/bin/python",
+      "args": ["/absolute/path/to/mcp-rag-server/mcp_server.py"],
       "env": {
         "FIRECRAWL_API_KEY": "your-key-here"
       }
@@ -84,29 +61,14 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-> `FIRECRAWL_API_KEY` is only needed for `web_search`. KB search works without it.
+Restart Claude Desktop. The tools appear automatically.
 
-> **Recommended:** Add custom instructions to ensure Claude always checks your knowledge base first. In Claude Desktop, go to Settings and add this to your project instructions:
+> `FIRECRAWL_API_KEY` is only needed for `web_search`. Omit the `env` block if you don't need it.
+
+> **Tip:** Add this to your Claude Desktop project instructions for best results:
 > *"Always use the rag-knowledge-base tools to search my documents before answering from your own knowledge."*
 
-### Cursor / VS Code
-
-Add to `.cursor/mcp.json` in your project:
-
-```json
-{
-  "mcpServers": {
-    "rag-knowledge-base": {
-      "command": "/absolute/path/to/project/venv/bin/python",
-      "args": ["/absolute/path/to/project/mcp_server.py"]
-    }
-  }
-}
-```
-
-> **Recommended:** Add to `.cursorrules` in your project: *"Always use the rag-knowledge-base tools to search my documents before answering from your own knowledge."*
-
-### Claude Code (CLI)
+#### Claude Code (CLI)
 
 Add to `.mcp.json` in your project root:
 
@@ -114,16 +76,33 @@ Add to `.mcp.json` in your project root:
 {
   "mcpServers": {
     "rag-knowledge-base": {
-      "command": "/absolute/path/to/project/venv/bin/python",
-      "args": ["/absolute/path/to/project/mcp_server.py"]
+      "command": "/absolute/path/to/mcp-rag-server/venv/bin/python",
+      "args": ["/absolute/path/to/mcp-rag-server/mcp_server.py"]
     }
   }
 }
 ```
 
-> **Recommended:** Add to your project's `CLAUDE.md`: *"Always use the rag-knowledge-base tools to search my documents before answering from your own knowledge."*
+> **Tip:** Add to your project's `CLAUDE.md`: *"Always use the rag-knowledge-base tools to search my documents before answering from your own knowledge."*
 
-### Local LLMs (Ollama + Continue.dev)
+#### Cursor / VS Code
+
+Add to `.cursor/mcp.json` in your project:
+
+```json
+{
+  "mcpServers": {
+    "rag-knowledge-base": {
+      "command": "/absolute/path/to/mcp-rag-server/venv/bin/python",
+      "args": ["/absolute/path/to/mcp-rag-server/mcp_server.py"]
+    }
+  }
+}
+```
+
+> **Tip:** Add to `.cursorrules` in your project: *"Always use the rag-knowledge-base tools to search my documents before answering from your own knowledge."*
+
+#### Local LLMs (Ollama + Continue.dev)
 
 This is where the server really shines. Your local LLM has no built-in tools — no document access, no web search, nothing. This server gives it semantic document search and web search through a single MCP connection.
 
@@ -135,14 +114,53 @@ With [Continue.dev](https://continue.dev/) in VS Code:
   "mcpServers": [
     {
       "name": "rag-knowledge-base",
-      "command": "/absolute/path/to/project/venv/bin/python",
-      "args": ["/absolute/path/to/project/mcp_server.py"]
+      "command": "/absolute/path/to/mcp-rag-server/venv/bin/python",
+      "args": ["/absolute/path/to/mcp-rag-server/mcp_server.py"]
     }
   ]
 }
 ```
 
 Other MCP-compatible local LLM clients (Open WebUI, msty) follow a similar pattern — point them at `mcp_server.py` as a stdio server.
+
+### Step 4: Ask questions
+
+That's it. Start asking questions in your AI client — it will search your knowledge base automatically.
+
+If you're using the included sample documents, try:
+
+| Query | Expected Source | What It Tests |
+|-------|----------------|---------------|
+| "What authentication method did the team choose?" | adr-auth-middleware.md | Semantic match on ADR document |
+| "What are the API rate limits?" | api-reference.md | Precise technical detail retrieval |
+| "How do I set up my dev environment?" | onboarding-guide.md | Natural language to structured guide |
+| "What caused the February API outage?" | infrastructure-report.pdf | PDF search with page citation |
+| "Redis vs Memcached comparison" | research-notes.txt | Cross-document semantic search |
+| "How to cook pasta" | No results | Irrelevant query correctly filtered |
+
+## Adding Documents
+
+**On startup:** Drop `.md`, `.txt`, `.pdf` files in `data/`. They're automatically loaded, chunked, embedded, and indexed. The collection is rebuilt fresh each startup, so edits, renames, and deletions in `data/` are picked up automatically — no stale data accumulates.
+
+**At runtime:** Use the `ingest_document` tool from your AI client:
+
+```
+ingest_document(filepath="/path/to/new-doc.pdf", title="API Reference")
+```
+
+The document is immediately searchable for the current session. To make it permanent, add the file to `data/` — it will be included in every future startup.
+
+**Adding files to `data/` while the server is running** has no effect until the next restart. The server reads `data/` once at startup. To index a new file mid-session without restarting, use the `ingest_document` tool.
+
+**File type support:**
+
+| Format | Section headings | Page numbers | Notes |
+|--------|-----------------|--------------|-------|
+| `.md` | Yes (`#` headers) | No | Best for structured documents |
+| `.pdf` | Yes (font-based via pymupdf4llm) | Yes | Headings detected from font size hierarchy |
+| `.txt` | No | No | Paragraph-based chunking only |
+
+Search results include metadata when available: `[Source: title | Section: heading | Page: 3 | Relevance: 0.82]`
 
 ## Storage Modes
 
@@ -172,30 +190,6 @@ Or set `qdrant_mode` in `config.yaml`:
 qdrant_mode: "server"
 qdrant_url: "http://localhost:6333"
 ```
-
-## Adding Documents
-
-**On startup:** Drop `.md`, `.txt`, `.pdf` files in `data/`. They're automatically loaded, chunked, embedded, and indexed. The collection is rebuilt fresh each startup, so edits, renames, and deletions in `data/` are picked up automatically — no stale data accumulates.
-
-**At runtime:** Use the `ingest_document` tool from your AI client:
-
-```
-ingest_document(filepath="/path/to/new-doc.pdf", title="API Reference")
-```
-
-The document is immediately searchable for the current session. To make it permanent, add the file to `data/` — it will be included in every future startup.
-
-**Adding files to `data/` while the server is running** has no effect until the next restart. The server reads `data/` once at startup. To index a new file mid-session without restarting, use the `ingest_document` tool.
-
-**File type support:**
-
-| Format | Section headings | Page numbers | Notes |
-|--------|-----------------|--------------|-------|
-| `.md` | Yes (`#` headers) | No | Best for structured documents |
-| `.pdf` | Yes (font-based via pymupdf4llm) | Yes | Headings detected from font size hierarchy |
-| `.txt` | No | No | Paragraph-based chunking only |
-
-Search results include metadata when available: `[Source: title | Section: heading | Page: 3 | Relevance: 0.82]`
 
 ## Configuration
 
@@ -229,7 +223,7 @@ The server is designed for intelligent tool routing. Your LLM checks the knowled
 
 This matters especially for local LLMs: cloud models like Claude have built-in web search, but local Ollama models have nothing. This server gives them both private document access AND web access through a single MCP connection.
 
-**Important:** The server sends instructions via the MCP protocol asking the LLM to always check the knowledge base first. However, MCP instructions are advisory — the client decides whether to follow them. For the most reliable experience, add custom instructions to your AI client (see the "Connect to Your AI Client" section above for recommended instructions per client).
+**Important:** The server sends instructions via the MCP protocol asking the LLM to always check the knowledge base first. However, MCP instructions are advisory — the client decides whether to follow them. For the most reliable experience, add custom instructions to your AI client (see Step 3 in Setup above).
 
 ```
 User question
@@ -241,26 +235,6 @@ LLM calls knowledge_base_search
     │
     └── "I couldn't find..." → LLM calls web_search → answers from web
 ```
-
-## Why These Technical Defaults?
-
-**Why Nomic v1.5?** — Asymmetric embedding model with task-type prefixes (`search_document:` vs `search_query:`). Documents and queries are embedded differently for better retrieval. Consistently strong on MTEB benchmarks. Runs locally, no API key needed.
-
-**Why paragraph-boundary chunking?** — Splits on `\n\n` boundaries, not fixed character counts. Preserves semantic coherence. Configurable chunk size and overlap.
-
-**Why UUID5 deterministic IDs?** — Re-ingesting the same document is idempotent. Restart the server 10 times, you get the same chunks, not duplicates.
-
-**Why score threshold 0.66?** — Empirically determined by mapping score distributions across relevant and irrelevant queries against the included sample documents. Relevant queries score 0.66-0.81, irrelevant ones score 0.48-0.67. The threshold sits at the separation point: high enough to filter noise, low enough to catch all relevant results. Gives the LLM a clean "no answer" signal for out-of-scope queries — critical for the KB-to-web fallback routing.
-
-**Why Qdrant?** — Production vector DB that runs embedded (local mode) or as a server. Start small, scale when needed. Same API either way.
-
-## What Makes This Different
-
-- **Zero-ceremony setup** — Most MCP RAG servers require a separate ingest/index command before search works. This server auto-ingests documents from `data/` on startup. No extra steps.
-- **No Docker by default** — Runs with local file-based storage out of the box. Docker is optional for scaling up.
-- **Dual-tool pattern** — Private KB search + web search in one server. Especially valuable for local LLMs that have no built-in capabilities.
-- **No API keys for embeddings** — Runs Nomic v1.5 locally via sentence-transformers. Your data never leaves your machine.
-- **Two readable Python files** — Understand the entire system in 15 minutes. Extend it without learning a framework.
 
 ## Architecture
 
@@ -292,6 +266,38 @@ LLM calls knowledge_base_search
                     │  • Nomic v1.5 embeddings (768d)         │
                     └──────────────────────────────────────────┘
 ```
+
+## Use Cases
+
+**Team Project Documentation** — ADRs, API specs, runbooks, onboarding guides. Connect to Claude Desktop or Cursor and ask "What was the decision on auth middleware?" or "What are the API rate limits?" instead of searching through files. The included sample docs demonstrate this with a fictional startup's technical documentation.
+
+**Research & Study** — Drop research papers (PDFs) and notes into `data/`. Ask questions across all of them: "What caching strategy should we use?" or "What was the Q1 uptime?" Results include page numbers for easy reference back to the source.
+
+**Small Company Knowledge Base** — Internal docs (process guides, product specs, compliance docs) searchable by every team member's AI assistant. Too small for enterprise RAG, too doc-heavy for "just search Slack."
+
+**Local LLM Enhancement** — Running Ollama or another local model? Your LLM has zero built-in capabilities — no document access, no web search, no tools. This server gives it all three via MCP.
+
+**Who this isn't for:** Enterprise-scale (10,000+ docs), non-developers (no UI), or highly specialized domains needing custom chunking/embedding (legal, medical).
+
+## Why These Technical Defaults?
+
+**Why Nomic v1.5?** — Asymmetric embedding model with task-type prefixes (`search_document:` vs `search_query:`). Documents and queries are embedded differently for better retrieval. Consistently strong on MTEB benchmarks. Runs locally, no API key needed.
+
+**Why paragraph-boundary chunking?** — Splits on `\n\n` boundaries, not fixed character counts. Preserves semantic coherence. Configurable chunk size and overlap.
+
+**Why UUID5 deterministic IDs?** — Re-ingesting the same document is idempotent. Restart the server 10 times, you get the same chunks, not duplicates.
+
+**Why score threshold 0.66?** — Empirically determined by mapping score distributions across relevant and irrelevant queries against the included sample documents. Relevant queries score 0.66-0.81, irrelevant ones score 0.48-0.67. The threshold sits at the separation point: high enough to filter noise, low enough to catch all relevant results. Gives the LLM a clean "no answer" signal for out-of-scope queries — critical for the KB-to-web fallback routing.
+
+**Why Qdrant?** — Production vector DB that runs embedded (local mode) or as a server. Start small, scale when needed. Same API either way.
+
+## What Makes This Different
+
+- **Zero-ceremony setup** — Most MCP RAG servers require a separate ingest/index command before search works. This server auto-ingests documents from `data/` on startup. No extra steps.
+- **No Docker by default** — Runs with local file-based storage out of the box. Docker is optional for scaling up.
+- **Dual-tool pattern** — Private KB search + web search in one server. Especially valuable for local LLMs that have no built-in capabilities.
+- **No API keys for embeddings** — Runs Nomic v1.5 locally via sentence-transformers. Your data never leaves your machine.
+- **Two readable Python files** — Understand the entire system in 15 minutes. Extend it without learning a framework.
 
 ## Development
 
