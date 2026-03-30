@@ -1,11 +1,13 @@
 # mcp-rag-server
 
+[![Tests](https://github.com/agarwalvishal/mcp-rag-server/actions/workflows/tests.yml/badge.svg)](https://github.com/agarwalvishal/mcp-rag-server/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-Give any LLM — cloud or local — a private knowledge base and web search.
-Drop your documents in a folder, start the server, and your AI assistant
-instantly becomes an expert on your data.
+Give any LLM — cloud or local — a RAG-powered private knowledge base and web search.
+Drop your documents in a folder, start the server, and your AI assistant instantly
+becomes an expert on your data — with embeddings computed locally, so your documents
+never leave your machine.
 
 ## What It Does
 
@@ -17,7 +19,33 @@ This MCP server exposes three tools to any connected AI client:
 
 **No separate ingest command.** Documents in `data/` are automatically loaded, chunked, embedded, and indexed on startup.
 
-## Setup
+## What Makes This Different
+
+- **Your documents never leave your machine** — embeddings are computed locally with Nomic v1.5. No OpenAI, no Cohere, no cloud embedding API. KB search works fully offline after the initial model download (~550MB, one-time).
+- **Zero-ceremony setup** — Most MCP RAG servers require a separate ingest/index command before search works. This server auto-ingests documents from `data/` on startup. No extra steps.
+- **No Docker by default** — Runs with local file-based storage out of the box. Docker is optional for scaling up.
+- **Dual-tool pattern** — Private KB search + web search in one server. Especially valuable for local LLMs that have no built-in capabilities.
+- **Two readable Python files** — Understand the entire system in 15 minutes. Extend it without learning a framework.
+
+| | mcp-rag-server | LangChain / llama-index | Enterprise RAG |
+|---|---|---|---|
+| Documents leave your machine? | **Never** | Depends on embedding choice | Usually yes |
+| Auto-ingest on startup | ✓ | Manual index step | Manual / scheduled |
+| No Docker required | ✓ | Varies | Usually required |
+| MCP protocol (Claude, Cursor) | ✓ | ✗ | ✗ |
+| Works with local LLMs (Ollama) | ✓ | ✓ | Rarely |
+| Web search included | ✓ | Plugin/extra | Extra service |
+| Codebase to understand | ~640 lines | Thousands | N/A |
+
+## Use Cases
+
+**Team Project Documentation** — ADRs, API specs, runbooks, onboarding guides. Connect to Claude Desktop or Cursor and ask "What was the decision on auth middleware?" or "What are the API rate limits?" instead of searching through files. The included sample docs demonstrate this with a fictional startup's technical documentation.
+
+**Research & Study** — Drop research papers (PDFs) and notes into `data/`. Ask questions across all of them: "What caching strategy should we use?" or "What was the Q1 uptime?" Results include page numbers for easy reference back to the source.
+
+**Small Company Knowledge Base** — Internal docs (process guides, product specs, compliance docs) searchable by every team member's AI assistant. Too small for enterprise RAG, too doc-heavy for "just search Slack."
+
+**Local LLM Enhancement** — Running Ollama or another local model? Your LLM has zero built-in capabilities — no document access, no web search, no tools. This server gives it all three via MCP.
 
 ### Step 1: Install
 
@@ -33,7 +61,7 @@ pip install -r requirements.txt
 
 ### Step 2: Add your documents
 
-Drop `.md`, `.txt`, or `.pdf` files into the `data/` folder. The server loads everything in this folder on startup.
+> **First run:** Downloads the Nomic embedding model once (~550MB, cached to `~/.cache/huggingface/`). After that, KB search runs locally with no internet required. Web search is separate and optional — it requires a `FIRECRAWL_API_KEY`.
 
 The repo ships with sample documents from a fictional startup — you can use these to test, then replace with your own.
 
@@ -208,6 +236,7 @@ qdrant_local_path: "./qdrant_data"          # Storage path for local mode
 qdrant_url: "http://localhost:6333"         # Qdrant server URL (server mode only)
 collection_name: "knowledge_base"           # Qdrant collection name
 embedding_model: "nomic-ai/nomic-embed-text-v1.5"  # Sentence-transformers model
+                                            # Also accepts a local directory path for airgapped setups
 chunk_size: 500                             # Target chunk size (characters)
 chunk_overlap: 50                           # Overlap between chunks
 search_top_k: 3                             # Results per search
@@ -235,6 +264,18 @@ LLM calls knowledge_base_search
     │
     └── "I couldn't find..." → LLM calls web_search → answers from web
 ```
+
+## Why These Technical Defaults?
+
+**Why Nomic v1.5?** — Asymmetric embedding model with task-type prefixes (`search_document:` vs `search_query:`). Documents and queries are embedded differently for better retrieval. Consistently strong on MTEB benchmarks. Runs locally, no API key needed.
+
+**Why paragraph-boundary chunking?** — Splits on `\n\n` boundaries, not fixed character counts. Preserves semantic coherence. Configurable chunk size and overlap.
+
+**Why UUID5 deterministic IDs?** — Re-ingesting the same document is idempotent. Restart the server 10 times, you get the same chunks, not duplicates.
+
+**Why score threshold 0.66?** — Empirically determined by mapping score distributions across relevant and irrelevant queries against the included sample documents. Relevant queries score 0.66-0.81, irrelevant ones score 0.48-0.67. The threshold sits at the separation point: high enough to filter noise, low enough to catch all relevant results. Gives the LLM a clean "no answer" signal for out-of-scope queries — critical for the KB-to-web fallback routing.
+
+**Why Qdrant?** — Production vector DB that runs embedded (local mode) or as a server. Start small, scale when needed. Same API either way.
 
 ## Architecture
 
