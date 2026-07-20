@@ -6,3 +6,4 @@ sentence-transformers>=5.2.0,<6
 pyyaml>=6.0,<7
 pymupdf4llm>=1.27.0,<2
 pytest>=8.0,<9
+einops>=0.8.2,<1
